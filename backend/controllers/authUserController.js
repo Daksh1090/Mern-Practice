@@ -7,6 +7,7 @@ import {generateAccessToken, generateRefreshToken,} from "../utils/token.js";
 import {accessTokenCookieOptions, refreshTokenCookieOptions,} from "../utils/cookieOptions.js";
 import generateOTP from "../utils/generateOtp.js";
 import sendmail from "../nodemailer/sandmail.js";
+import hashOtp from "../utils/hashOtp.js";
 
 export const register = async (req, res) => {
   const { username, email, password } = req.body;
@@ -50,6 +51,7 @@ export const register = async (req, res) => {
   }
 };
 
+
 export const login = async (req, res) => {
   const { email, password } = req.body;
 
@@ -64,6 +66,10 @@ export const login = async (req, res) => {
 if (!isMatch) {
   return res.status(401).json({ message: "Invalid credentials" });
 }
+
+const isVarified = user.isEmailVerified;
+
+if(!isVarified) return res.status(400).json({message: "User Not Varified"})
 
   // 2. Generate tokens
   const accessToken = generateAccessToken(user._id);
@@ -82,10 +88,8 @@ if (!isMatch) {
         role: user.role,
       },
     });
-
-
-    
 };
+
 
 export const logout = (req, res) => {
   res
@@ -94,8 +98,6 @@ export const logout = (req, res) => {
     .status(200)
     .json({ message: "Logged out successfully" });
 };
-
-
 
 
 export const me = async (req, res) => {
@@ -117,9 +119,6 @@ export const me = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-
-
-
 
 
 export const refreshToken = (req, res) => {
@@ -156,8 +155,8 @@ export const refreshToken = (req, res) => {
 
 
 export const verifyOtp = async (req, res) => {
+  const { email, otp } = req.body;
   try {
-    const { email, otp } = req.body;
 
     // 1️⃣ Validate input
     if (!email || !otp) {
@@ -175,34 +174,107 @@ export const verifyOtp = async (req, res) => {
       });
     }
 
-    // 3️⃣ Check OTP match
-    if (user.emailOtp !== otp) {
+    // 3️⃣ Check OTP expiry FIRST
+    if (!user.emailOtp || user.emailOtpExpire < Date.now()) {
+      return res.status(400).json({
+        message: "OTP expired. Please resend OTP.",
+      });
+    }
+
+    // 4️⃣ Hash incoming OTP
+    const hashedOtp = hashOtp(otp);
+
+    // 5️⃣ Compare hashed values
+    if (hashedOtp !== user.emailOtp) {
       return res.status(400).json({
         message: "Invalid OTP",
       });
     }
 
-    // 4️⃣ Check OTP expiry
-    if (user.emailOtpExpires < Date.now()) {
-      return res.status(400).json({
-        message: "OTP expired",
-      });
-    }
-
-    // 5️⃣ Mark email as verified
+    // 6️⃣ Mark email as verified
     user.isEmailVerified = true;
     user.emailOtp = undefined;
-    user.emailOtpExpires = undefined;
+    user.emailOtpExpire = undefined;
 
     await user.save();
 
-    // 6️⃣ Success response
     return res.status(200).json({
       message: "Email verified successfully",
     });
 
   } catch (error) {
     console.error("Verify OTP Error:", error);
+    return res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
+
+
+export const resendOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // 1️⃣ Validate input
+    if (!email) {
+      return res.status(400).json({
+        message: "Email is required",
+      });
+    }
+
+    // 2️⃣ Find user
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // 3️⃣ Already verified?
+    if (user.isEmailVerified) {
+      return res.status(400).json({
+        message: "Email already verified",
+      });
+    }
+
+    if (
+  user.emailOtpExpire &&
+  user.emailOtpExpire > Date.now() - 60 * 1000
+) {
+  return res.status(429).json({
+    message: "Please wait 60 seconds before resending OTP",
+  });
+}
+    // 4️⃣ Generate new OTP
+    const otp = generateOTP();
+    const hashedOtp = hashOtp(otp);
+
+    // 5️⃣ Overwrite OTP + expiry
+    user.emailOtp = hashedOtp;
+    user.emailOtpExpire = Date.now() + 10 * 60 * 1000;
+
+    await user.save();
+
+    // 6️⃣ Send OTP email
+    await sendmail({
+      to: email,
+      subject: "Your new OTP",
+      html: `
+        <h2>Hello ${user.username}</h2>
+        <p>Your new OTP is:</p>
+        <h1>${otp}</h1>
+        <p>This OTP will expire in 10 minutes.</p>
+      `,
+    });
+
+    // 7️⃣ Success response
+    return res.status(200).json({
+      message: "OTP resent successfully",
+    });
+
+  } catch (error) {
+    console.error("Resend OTP Error:", error);
     return res.status(500).json({
       message: "Server error",
     });

@@ -1,5 +1,5 @@
 import express from "express";
-import { login, logout, me, register, refreshToken } from "../controllers/authUserController.js";
+import { login, logout, me, register, refreshToken, verifyOtp, resendOtp } from "../controllers/authUserController.js";
 import protect from "../middlewares/authMiddleware.js";
 
 
@@ -10,5 +10,7 @@ router.post("/login", login);
 router.post("/logout", logout);
 router.get("/me", protect, me);
 router.post("/refresh", refreshToken);
+router.post("/verifyotp", verifyOtp)
+router.post("/resendOtp", resendOtp)
 
 export default router;
