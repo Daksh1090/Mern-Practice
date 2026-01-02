@@ -8,6 +8,9 @@ import {accessTokenCookieOptions, refreshTokenCookieOptions,} from "../utils/coo
 import generateOTP from "../utils/generateOtp.js";
 import sendmail from "../nodemailer/sandmail.js";
 import hashOtp from "../utils/hashOtp.js";
+import transporter from "../nodemailer/config.js";
+import crypto from 'crypto';
+import hashToken from "../utils/hashToken.js";
 
 export const register = async (req, res) => {
   const { username, email, password } = req.body;
@@ -26,12 +29,13 @@ export const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
     // create otp 
     const otp = generateOTP();
+    const hashedotp = hashOtp(otp);
 
     const newUser = await User.create({
       username,
       email,
       password: hashedPassword,
-      emailOtp: otp,
+      emailOtp: hashedotp,
       emailOtpExpire: Date.now() + 10 * 60 * 1000,
     });
 
@@ -155,8 +159,8 @@ export const refreshToken = (req, res) => {
 
 
 export const verifyOtp = async (req, res) => {
-  const { email, otp } = req.body;
   try {
+    const { email, otp } = req.body;
 
     // 1️⃣ Validate input
     if (!email || !otp) {
@@ -174,24 +178,31 @@ export const verifyOtp = async (req, res) => {
       });
     }
 
-    // 3️⃣ Check OTP expiry FIRST
+    // 3️⃣ Block if already verified
+    if (user.isEmailVerified) {
+      return res.status(400).json({
+        message: "Email already verified",
+      });
+    }
+
+    // 4️⃣ Check OTP expiry
     if (!user.emailOtp || user.emailOtpExpire < Date.now()) {
       return res.status(400).json({
         message: "OTP expired. Please resend OTP.",
       });
     }
 
-    // 4️⃣ Hash incoming OTP
-    const hashedOtp = hashOtp(otp);
+    // 5️⃣ Hash incoming OTP (string safe)
+    const hashedOtp = hashOtp(String(otp));
 
-    // 5️⃣ Compare hashed values
+    // 6️⃣ Compare hashed OTP
     if (hashedOtp !== user.emailOtp) {
       return res.status(400).json({
         message: "Invalid OTP",
       });
     }
 
-    // 6️⃣ Mark email as verified
+    // 7️⃣ Mark verified & cleanup
     user.isEmailVerified = true;
     user.emailOtp = undefined;
     user.emailOtpExpire = undefined;
@@ -209,6 +220,7 @@ export const verifyOtp = async (req, res) => {
     });
   }
 };
+
 
 
 export const resendOtp = async (req, res) => {
@@ -275,6 +287,65 @@ export const resendOtp = async (req, res) => {
 
   } catch (error) {
     console.error("Resend OTP Error:", error);
+    return res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
+
+
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // 1️⃣ Validate input
+    if (!email) {
+      return res.status(400).json({
+        message: "Email is required",
+      });
+    }
+
+    // 2️⃣ Find user
+    const user = await User.findOne({ email });
+
+    // ❗ Do NOT reveal user existence
+    if (!user) {
+      return res.status(200).json({
+        message: "If account exists, reset link sent to email",
+      });
+    }
+
+    // 3️⃣ Generate reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    // 4️⃣ Hash token before saving
+    user.resetpasswordToken = hashToken(resetToken);
+    user.resetpasswordTokenExpireAt = Date.now() + 10 * 60 * 1000; // 10 min
+
+    await user.save();
+
+    // 5️⃣ Create reset URL
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+    // 6️⃣ Send email
+    await transporter.sendMail({
+      from: `"Support" <${process.env.GOOGLE_APP_EMAIL}>`,
+      to: user.email,
+      subject: "Password Reset Request",
+      html: `
+        <p>You requested a password reset</p>
+        <p>This link expires in <b>10 minutes</b></p>
+        <a href="${resetUrl}">Reset Password</a>
+      `,
+    });
+
+    return res.status(200).json({
+      message: "If account exists, reset link sent to email",
+    });
+
+  } catch (error) {
+    console.error("Forgot Password Error:", error);
     return res.status(500).json({
       message: "Server error",
     });
