@@ -1,8 +1,12 @@
 import User from "../models/userModel.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import optMailTemplate from "../utils/otpMailTemplate.js";
+
 import {generateAccessToken, generateRefreshToken,} from "../utils/token.js";
 import {accessTokenCookieOptions, refreshTokenCookieOptions,} from "../utils/cookieOptions.js";
+import generateOTP from "../utils/generateOtp.js";
+import sendmail from "../nodemailer/sandmail.js";
 
 export const register = async (req, res) => {
   const { username, email, password } = req.body;
@@ -19,19 +23,27 @@ export const register = async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+    // create otp 
+    const otp = generateOTP();
 
     const newUser = await User.create({
       username,
       email,
       password: hashedPassword,
+      emailOtp: otp,
+      emailOtpExpire: Date.now() + 10 * 60 * 1000,
     });
 
-    res.status(201).json({
-      _id: newUser._id,
-      username: newUser.username,
-      email: newUser.email,
-      role: newUser.role,
+    await sendmail({
+      to: email,
+      subject: 'Verify your email',
+      html: optMailTemplate(username, otp),
+    })
+
+     res.status(201).json({
+      message: "Registration successful. OTP sent to email.",
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
@@ -139,5 +151,60 @@ export const refreshToken = (req, res) => {
     return res.json({ message: "Access token refreshed" });
   } catch (err) {
     return res.status(403).json({ message: "Refresh token expired" });
+  }
+};
+
+
+export const verifyOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    // 1️⃣ Validate input
+    if (!email || !otp) {
+      return res.status(400).json({
+        message: "Email and OTP are required",
+      });
+    }
+
+    // 2️⃣ Find user
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // 3️⃣ Check OTP match
+    if (user.emailOtp !== otp) {
+      return res.status(400).json({
+        message: "Invalid OTP",
+      });
+    }
+
+    // 4️⃣ Check OTP expiry
+    if (user.emailOtpExpires < Date.now()) {
+      return res.status(400).json({
+        message: "OTP expired",
+      });
+    }
+
+    // 5️⃣ Mark email as verified
+    user.isEmailVerified = true;
+    user.emailOtp = undefined;
+    user.emailOtpExpires = undefined;
+
+    await user.save();
+
+    // 6️⃣ Success response
+    return res.status(200).json({
+      message: "Email verified successfully",
+    });
+
+  } catch (error) {
+    console.error("Verify OTP Error:", error);
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
