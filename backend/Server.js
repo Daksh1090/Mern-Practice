@@ -1,4 +1,4 @@
-import express from "express";
+import express, { urlencoded } from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -19,6 +19,7 @@ app.use(cookieParser());
 
 //Middlewares
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 //Routes
 app.use("/api/auth", authUserRoute);
@@ -29,5 +30,3 @@ connectDB();
 app.listen(PORT, () => {
     console.log("Server is Running");
 })
-
-// This is Comment

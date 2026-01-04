@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
     isEmailVerified: { type: Boolean, default: false },
     emailOtp: { type: String, default: ''},
     emailOtpExpire: { type: Date},
+    lastOtpSentAt: { type: Date, default: null },
     resetpasswordToken: { type: String},
     resetpasswordTokenExpireAt: { type: Date},
 

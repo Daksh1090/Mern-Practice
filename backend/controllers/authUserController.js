@@ -3,13 +3,16 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import optMailTemplate from "../utils/otpMailTemplate.js";
 
-import {generateAccessToken, generateRefreshToken,} from "../utils/token.js";
-import {accessTokenCookieOptions, refreshTokenCookieOptions,} from "../utils/cookieOptions.js";
+import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
+import {
+  accessTokenCookieOptions,
+  refreshTokenCookieOptions,
+} from "../utils/cookieOptions.js";
 import generateOTP from "../utils/generateOtp.js";
 import sendmail from "../nodemailer/sandmail.js";
 import hashOtp from "../utils/hashOtp.js";
 import transporter from "../nodemailer/config.js";
-import crypto from 'crypto';
+import crypto from "crypto";
 import hashToken from "../utils/hashToken.js";
 
 export const register = async (req, res) => {
@@ -27,7 +30,7 @@ export const register = async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    // create otp 
+    // create otp
     const otp = generateOTP();
     const hashedotp = hashOtp(otp);
 
@@ -37,24 +40,23 @@ export const register = async (req, res) => {
       password: hashedPassword,
       emailOtp: hashedotp,
       emailOtpExpire: Date.now() + 10 * 60 * 1000,
+      lastOtpSentAt: Date.now(),
     });
 
     await sendmail({
       to: email,
-      subject: 'Verify your email',
+      subject: "Verify your email",
       html: optMailTemplate(username, otp),
-    })
-
-     res.status(201).json({
-      message: "Registration successful. OTP sent to email.",
     });
 
+    res.status(201).json({
+      message: "Registration successful. OTP sent to email.",
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
   }
 };
-
 
 export const login = async (req, res) => {
   const { email, password } = req.body;
@@ -67,13 +69,14 @@ export const login = async (req, res) => {
 
   const isMatch = await bcrypt.compare(password, user.password);
 
-if (!isMatch) {
-  return res.status(401).json({ message: "Invalid credentials" });
-}
+  if (!isMatch) {
+    return res.status(401).json({ message: "Invalid credentials" });
+  }
 
-const isVarified = user.isEmailVerified;
+  const isVarified = user.isEmailVerified;
 
-if(!isVarified) return res.status(400).json({message: "User Not Varified"})
+  if (!isVarified)
+    return res.status(400).json({ message: "User Not Varified" });
 
   // 2. Generate tokens
   const accessToken = generateAccessToken(user._id);
@@ -94,7 +97,6 @@ if(!isVarified) return res.status(400).json({message: "User Not Varified"})
     });
 };
 
-
 export const logout = (req, res) => {
   res
     .clearCookie("accessToken")
@@ -102,7 +104,6 @@ export const logout = (req, res) => {
     .status(200)
     .json({ message: "Logged out successfully" });
 };
-
 
 export const me = async (req, res) => {
   try {
@@ -124,7 +125,6 @@ export const me = async (req, res) => {
   }
 };
 
-
 export const refreshToken = (req, res) => {
   const refreshToken = req.cookies.refreshToken;
 
@@ -133,10 +133,7 @@ export const refreshToken = (req, res) => {
   }
 
   try {
-    const decoded = jwt.verify(
-      refreshToken,
-      process.env.JWT_REFRESH_SECRET
-    );
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
     const newAccessToken = jwt.sign(
       { id: decoded.id },
@@ -156,7 +153,6 @@ export const refreshToken = (req, res) => {
     return res.status(403).json({ message: "Refresh token expired" });
   }
 };
-
 
 export const verifyOtp = async (req, res) => {
   try {
@@ -212,7 +208,6 @@ export const verifyOtp = async (req, res) => {
     return res.status(200).json({
       message: "Email verified successfully",
     });
-
   } catch (error) {
     console.error("Verify OTP Error:", error);
     return res.status(500).json({
@@ -220,8 +215,6 @@ export const verifyOtp = async (req, res) => {
     });
   }
 };
-
-
 
 export const resendOtp = async (req, res) => {
   try {
@@ -251,13 +244,14 @@ export const resendOtp = async (req, res) => {
     }
 
     if (
-  user.emailOtpExpire &&
-  user.emailOtpExpire > Date.now() - 60 * 1000
-) {
-  return res.status(429).json({
-    message: "Please wait 60 seconds before resending OTP",
-  });
-}
+      user.lastOtpSentAt &&
+      Date.now() - user.lastOtpSentAt.getTime() < 60 * 1000
+    ) {
+      return res.status(429).json({
+        message: "Please wait 60 seconds before resending OTP",
+      });
+    }
+
     // 4️⃣ Generate new OTP
     const otp = generateOTP();
     const hashedOtp = hashOtp(otp);
@@ -265,6 +259,7 @@ export const resendOtp = async (req, res) => {
     // 5️⃣ Overwrite OTP + expiry
     user.emailOtp = hashedOtp;
     user.emailOtpExpire = Date.now() + 10 * 60 * 1000;
+    user.lastOtpSentAt = new Date();
 
     await user.save();
 
@@ -284,7 +279,6 @@ export const resendOtp = async (req, res) => {
     return res.status(200).json({
       message: "OTP resent successfully",
     });
-
   } catch (error) {
     console.error("Resend OTP Error:", error);
     return res.status(500).json({
@@ -292,8 +286,6 @@ export const resendOtp = async (req, res) => {
     });
   }
 };
-
-
 
 export const forgotPassword = async (req, res) => {
   try {
@@ -343,11 +335,48 @@ export const forgotPassword = async (req, res) => {
     return res.status(200).json({
       message: "If account exists, reset link sent to email",
     });
-
   } catch (error) {
     console.error("Forgot Password Error:", error);
     return res.status(500).json({
       message: "Server error",
     });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ message: "Password is required" });
+    }
+
+    const user = await User.findOne({
+      resetpasswordToken: token,
+      resetpasswordTokenExpireAt: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Token is invalid or expired" });
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    user.resetpasswordToken = undefined;
+    user.resetpasswordTokenExpireAt = undefined;
+
+    await user.save();
+
+    await transporter.sendMail({
+      from: `"Support" <${process.env.GOOGLE_APP_EMAIL}>`,
+      to: user.email,
+      subject: "Password Reset Successfully",
+      html: `<p>Your password has been reset successfully.</p>`,
+    });
+
+    res.status(200).json({ message: "Password reset successful" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server Error" });
   }
 };
