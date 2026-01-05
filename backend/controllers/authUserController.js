@@ -11,6 +11,8 @@ import hashOtp from "../utils/hashOtp.js";
 import transporter from "../nodemailer/config.js";
 import crypto from 'crypto';
 import hashToken from "../utils/hashToken.js";
+import cloudinary from "../config/cloudinary.js";
+import fileUploadOnCloudinary from "../config/cloudinary.js";
 
 export const register = async (req, res) => {
   const { username, email, password } = req.body;
@@ -27,9 +29,23 @@ export const register = async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    // create otp 
+
+    // OTP
     const otp = generateOTP();
     const hashedotp = hashOtp(otp);
+
+    let profileImage = {};
+
+    // ✅ Handle image upload
+    if (req.file) {
+      const response = await fileUploadOnCloudinary(req.file.path);
+
+      console.log(req.file);
+      profileImage = {
+        public_id: response.public_id,
+        url: response.secure_url,
+      };
+    }
 
     const newUser = await User.create({
       username,
@@ -37,23 +53,24 @@ export const register = async (req, res) => {
       password: hashedPassword,
       emailOtp: hashedotp,
       emailOtpExpire: Date.now() + 10 * 60 * 1000,
+      profileImage,
     });
 
     await sendmail({
       to: email,
-      subject: 'Verify your email',
+      subject: "Verify your email",
       html: optMailTemplate(username, otp),
-    })
-
-     res.status(201).json({
-      message: "Registration successful. OTP sent to email.",
     });
 
+    res.status(201).json({
+      message: "Registration successful. OTP sent to email.",
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
   }
 };
+
 
 
 export const login = async (req, res) => {
@@ -349,5 +366,24 @@ export const forgotPassword = async (req, res) => {
     return res.status(500).json({
       message: "Server error",
     });
+  }
+};
+
+
+// Controller function
+export const uploadFileController = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    // Upload file to Cloudinary
+    const result = await fileUploadOnCloudinary(req.file.path);
+
+    console.log(result);
+    return res.json({result});
+  } catch (error) {
+    console.error("Upload Controller Error:", error);
+    return res.status(500).json({ message: "Failed to upload file", error: error.message });
   }
 };

@@ -14,11 +14,13 @@ app.use(cors({
     origin: "http://localhost:5173",
     credentials: true,
 }))
-
 app.use(cookieParser());
 
 //Middlewares
 app.use(express.json());
+app.use(express.urlencoded({ express: false}))
+import multer from "multer";
+
 
 //Routes
 app.use("/api/auth", authUserRoute);
