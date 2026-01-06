@@ -19,7 +19,6 @@ app.use(cookieParser());
 //Middlewares
 app.use(express.json());
 app.use(express.urlencoded({ express: false}))
-import multer from "multer";
 
 
 //Routes
