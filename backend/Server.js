@@ -1,4 +1,4 @@
-import express from "express";
+import express, { urlencoded } from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -19,7 +19,10 @@ app.use(cookieParser());
 //Middlewares
 app.use(express.json());
 app.use(express.urlencoded({ express: false}))
+<<<<<<< HEAD
 
+=======
+>>>>>>> 31e4fb7589e4ee33f76c591686d1e8ef54328402
 
 //Routes
 app.use("/api/auth", authUserRoute);
