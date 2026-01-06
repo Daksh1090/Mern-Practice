@@ -11,8 +11,7 @@ import hashOtp from "../utils/hashOtp.js";
 import transporter from "../nodemailer/config.js";
 import crypto from 'crypto';
 import hashToken from "../utils/hashToken.js";
-import cloudinary from "../config/cloudinary.js";
-import fileUploadOnCloudinary from "../config/cloudinary.js";
+import uploadImages from "../services/ImageKit.js";
 
 export const register = async (req, res) => {
   const { username, email, password } = req.body;
@@ -34,26 +33,12 @@ export const register = async (req, res) => {
     const otp = generateOTP();
     const hashedotp = hashOtp(otp);
 
-    let profileImage = {};
-
-    // ✅ Handle image upload
-    if (req.file) {
-      const response = await fileUploadOnCloudinary(req.file.path);
-
-      console.log(req.file);
-      profileImage = {
-        public_id: response.public_id,
-        url: response.secure_url,
-      };
-    }
-
     const newUser = await User.create({
       username,
       email,
       password: hashedPassword,
       emailOtp: hashedotp,
       emailOtpExpire: Date.now() + 10 * 60 * 1000,
-      profileImage,
     });
 
     await sendmail({
@@ -387,3 +372,23 @@ export const uploadFileController = async (req, res) => {
     return res.status(500).json({ message: "Failed to upload file", error: error.message });
   }
 };
+
+
+
+
+export const uploadImage = async (req,res) => {
+    try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const result = await uploadImages(req.file);
+
+    res.status(200).json({
+      url: result.url,
+      fileId: result.fileId
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+} 
