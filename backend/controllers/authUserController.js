@@ -14,6 +14,7 @@ import hashOtp from "../utils/hashOtp.js";
 import transporter from "../nodemailer/config.js";
 import crypto from "crypto";
 import hashToken from "../utils/hashToken.js";
+import uploadImages from "../services/ImageKit.js";
 
 export const register = async (req, res) => {
   const { username, email, password } = req.body;
@@ -30,7 +31,7 @@ export const register = async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    // create otp
+    
     const otp = generateOTP();
     const hashedotp = hashOtp(otp);
 
@@ -380,3 +381,21 @@ export const resetPassword = async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 };
+
+
+export const uploadImage = async (req,res) => {
+    try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const result = await uploadImages(req.file);
+
+    res.status(200).json({
+      url: result.url,
+      fileId: result.fileId
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+} 
